@@ -1,0 +1,22 @@
+# =============================================================================
+# Dockerfile for Spring Boot applications
+# =============================================================================
+# Expects the JAR to be pre-built in target/ (by Maven in CI or locally).
+# Uses Alpine-based JRE for minimal image size (~200MB).
+#
+# Build:
+#   docker build -t myapp .
+#
+# Run:
+#   docker run -p 8080:8080 -e GITHUB_TOKEN=xxx myapp
+# =============================================================================
+
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+COPY target/*.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
