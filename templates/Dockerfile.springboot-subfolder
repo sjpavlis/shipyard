@@ -1,0 +1,20 @@
+# =============================================================================
+# Dockerfile for Spring Boot apps where source is in a subdirectory
+# =============================================================================
+# Use this when your Maven project is in a subfolder (e.g., "app/" or "backend/").
+# The build context should be the repo root, and this copies from the subfolder.
+#
+# Replace <subfolder> with your actual directory name.
+#
+# Build (from repo root):
+#   docker build -t myapp .
+# =============================================================================
+
+FROM eclipse-temurin:17-jre-alpine
+
+# Replace <subfolder> with your project directory (e.g., "app", "backend", "server")
+COPY <subfolder>/target/*.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "/app.jar"]
