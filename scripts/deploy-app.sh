@@ -68,85 +68,107 @@ echo "============================================="
 # Setup SSH key
 # =============================================================================
 SSH_KEY_FILE=$(mktemp)
-echo "$DROPLET_SSH_KEY" > "$SSH_KEY_FILE"
+printf '%s\n' "$DROPLET_SSH_KEY" > "$SSH_KEY_FILE"
 chmod 600 "$SSH_KEY_FILE"
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $SSH_KEY_FILE"
 
 # =============================================================================
-# Build docker run command
+# Build the remote deploy script locally, then send it
 # =============================================================================
-DOCKER_RUN="docker run -d --name $APP_NAME"
+# Using a script file avoids heredoc variable expansion issues and special
+# character problems with JDBC URLs, passwords, etc.
+
+REMOTE_SCRIPT=$(mktemp)
+
+cat > "$REMOTE_SCRIPT" <<'SCRIPT_HEADER'
+#!/bin/bash
+set -e
+SCRIPT_HEADER
+
+# Registry login
+cat >> "$REMOTE_SCRIPT" <<EOF
+echo "📦 Logging in to registry..."
+echo '${REGISTRY_TOKEN}' | docker login ghcr.io -u '${REGISTRY_USER}' --password-stdin
+
+echo "⬇️  Pulling ${IMAGE}..."
+docker pull ${IMAGE}
+
+echo "🔄 Stopping old container..."
+docker stop ${APP_NAME} 2>/dev/null || true
+docker rm ${APP_NAME} 2>/dev/null || true
+
+echo "🚀 Starting new container..."
+EOF
+
+# Build docker run command
+DOCKER_CMD="docker run -d --name ${APP_NAME}"
 
 # Network configuration
 if [ "$NETWORK_MODE" = "host" ]; then
-  DOCKER_RUN="$DOCKER_RUN --network host"
+  DOCKER_CMD="$DOCKER_CMD --network host"
 else
-  DOCKER_RUN="$DOCKER_RUN -p $HOST_PORT:$APP_PORT"
+  DOCKER_CMD="$DOCKER_CMD -p ${HOST_PORT}:${APP_PORT}"
 fi
 
-# Environment variables
+# Environment variables - each one gets its own -e flag with single quotes
+# This safely handles special characters in values (?, =, &, etc.)
 if [ -n "$ENV_VARS" ]; then
   while IFS= read -r line; do
     if [ -n "$line" ]; then
-      DOCKER_RUN="$DOCKER_RUN -e \"$line\""
+      # Extract key and value separately to handle special chars
+      ENV_KEY="${line%%=*}"
+      ENV_VAL="${line#*=}"
+      DOCKER_CMD="$DOCKER_CMD -e ${ENV_KEY}='${ENV_VAL}'"
     fi
   done <<< "$ENV_VARS"
 fi
 
 # Additional docker args
 if [ -n "$DOCKER_ARGS" ]; then
-  DOCKER_RUN="$DOCKER_RUN $DOCKER_ARGS"
+  DOCKER_CMD="$DOCKER_CMD $DOCKER_ARGS"
 fi
 
 # Restart policy and image
-DOCKER_RUN="$DOCKER_RUN --restart unless-stopped $IMAGE"
+DOCKER_CMD="$DOCKER_CMD --restart unless-stopped ${IMAGE}"
 
-# =============================================================================
-# Build image name for cleanup (without tag)
-# =============================================================================
-IMAGE_BASE="${IMAGE%:*}"
+# Write the docker run command to the script
+echo "$DOCKER_CMD" >> "$REMOTE_SCRIPT"
 
-# =============================================================================
-# Deploy via SSH
-# =============================================================================
-echo ""
-echo "🔐 Connecting to $DROPLET_HOST..."
-
-ssh $SSH_OPTS root@"$DROPLET_HOST" <<DEPLOY_SCRIPT
-set -e
-
-echo "📦 Logging in to registry..."
-echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
-
-echo "⬇️  Pulling $IMAGE..."
-docker pull $IMAGE
-
-echo "🔄 Stopping old container..."
-docker stop $APP_NAME 2>/dev/null || true
-docker rm $APP_NAME 2>/dev/null || true
-
-echo "🚀 Starting new container..."
-$DOCKER_RUN
+# Image cleanup
+cat >> "$REMOTE_SCRIPT" <<EOF
 
 echo "🧹 Cleaning up old images..."
-docker images $IMAGE_BASE --format '{{.Repository}}:{{.Tag}}' \
-  | grep -v '<none>' \
-  | grep -v ':latest' \
-  | sort -t: -k2 -V -r \
-  | tail -n +$KEEP_IMAGES \
+docker images ${IMAGE%:*} --format '{{.Repository}}:{{.Tag}}' \\
+  | grep -v '<none>' \\
+  | grep -v ':latest' \\
+  | sort -t: -k2 -V -r \\
+  | tail -n +${KEEP_IMAGES} \\
   | xargs -r docker rmi 2>/dev/null || true
 docker image prune -f 2>/dev/null || true
 
 echo ""
-echo "✅ $APP_NAME deployed successfully!"
-echo "   Container: \$(docker ps --filter name=$APP_NAME --format '{{.Status}}')"
-DEPLOY_SCRIPT
+echo "✅ ${APP_NAME} deployed successfully!"
+docker ps --filter name=${APP_NAME} --format 'Container: {{.Status}}'
+EOF
 
 # =============================================================================
-# Cleanup
+# Deploy: copy script to remote and execute
+# =============================================================================
+echo ""
+echo "🔐 Connecting to $DROPLET_HOST..."
+
+# Copy the script to the remote server
+scp $SSH_OPTS "$REMOTE_SCRIPT" root@"$DROPLET_HOST":/tmp/shipyard-deploy.sh
+
+# Execute it
+ssh $SSH_OPTS root@"$DROPLET_HOST" "chmod +x /tmp/shipyard-deploy.sh && /tmp/shipyard-deploy.sh && rm -f /tmp/shipyard-deploy.sh"
+
+# =============================================================================
+# Cleanup local temp files
 # =============================================================================
 rm -f "$SSH_KEY_FILE"
+rm -f "$REMOTE_SCRIPT"
 
 echo ""
 echo "============================================="
