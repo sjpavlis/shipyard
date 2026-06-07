@@ -103,10 +103,12 @@ if [ "$INSTALL_MYSQL" = "true" ]; then
   # Create database and user if specified
   if [ -n "$DB_NAME" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASSWORD" ]; then
     echo "  Creating database '$DB_NAME' and user '$DB_USER'..."
+    # Use printf to safely handle special characters in passwords
+    ESCAPED_PASS=$(printf '%s' "$DB_PASSWORD" | sed "s/'/''/g")
     mysql -u root <<EOF
-CREATE DATABASE IF NOT EXISTS $DB_NAME;
-CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
+CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`;
+CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$ESCAPED_PASS';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';
 FLUSH PRIVILEGES;
 EOF
     echo "  Database and user created."
