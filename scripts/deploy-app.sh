@@ -14,6 +14,7 @@
 #   REGISTRY_USER   - Registry username
 #
 # Optional environment variables:
+#   REGISTRY_URL    - Container registry URL (default: ghcr.io)
 #   APP_PORT        - Application port (default: 8080)
 #   HOST_PORT       - Host port to map to (default: same as APP_PORT)
 #   NETWORK_MODE    - Docker network mode: "bridge" or "host" (default: bridge)
@@ -54,6 +55,7 @@ HOST_PORT="${HOST_PORT:-$APP_PORT}"
 NETWORK_MODE="${NETWORK_MODE:-bridge}"
 KEEP_IMAGES="${KEEP_IMAGES:-3}"
 DOCKER_ARGS="${DOCKER_ARGS:-}"
+REGISTRY_URL="${REGISTRY_URL:-ghcr.io}"
 
 echo "============================================="
 echo " 🚢 Shipyard - Deploying $APP_NAME"
@@ -62,6 +64,7 @@ echo " Image:    $IMAGE"
 echo " Host:     $DROPLET_HOST"
 echo " Port:     $HOST_PORT:$APP_PORT"
 echo " Network:  $NETWORK_MODE"
+echo " Registry: $REGISTRY_URL"
 echo "============================================="
 
 # =============================================================================
@@ -89,7 +92,7 @@ SCRIPT_HEADER
 # Registry login
 cat >> "$REMOTE_SCRIPT" <<EOF
 echo "📦 Logging in to registry..."
-echo '${REGISTRY_TOKEN}' | docker login ghcr.io -u '${REGISTRY_USER}' --password-stdin
+echo '${REGISTRY_TOKEN}' | docker login ${REGISTRY_URL} -u '${REGISTRY_USER}' --password-stdin
 
 echo "⬇️  Pulling ${IMAGE}..."
 docker pull ${IMAGE}
