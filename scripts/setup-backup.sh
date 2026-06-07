@@ -76,15 +76,17 @@ BACKUP_SCRIPT="$REPO_DIR/scripts/backup-db.sh"
 mkdir -p "$(dirname "$BACKUP_SCRIPT")"
 mkdir -p "$REPO_DIR/$(dirname "$BACKUP_PATH")"
 
-cat > "$BACKUP_SCRIPT" <<EOF
+# Use a quoted heredoc (<<'EOF') to prevent variable expansion,
+# then replace placeholders. This safely handles special chars in passwords.
+cat > "$BACKUP_SCRIPT" <<SCRIPT
 #!/bin/bash
-cd $REPO_DIR
+cd '$REPO_DIR'
 git pull --rebase
-mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > $BACKUP_PATH
-git add $BACKUP_PATH
+mysqldump -u '$DB_USER' -p'$DB_PASSWORD' '$DB_NAME' > '$BACKUP_PATH'
+git add '$BACKUP_PATH'
 git commit -m "[auto-update] backup: db dump \$(date +%Y-%m-%d)" --allow-empty
 git push
-EOF
+SCRIPT
 
 chmod +x "$BACKUP_SCRIPT"
 echo "✅ Backup script created at $BACKUP_SCRIPT"
