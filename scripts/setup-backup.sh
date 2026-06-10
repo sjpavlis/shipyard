@@ -81,10 +81,22 @@ mkdir -p "$REPO_DIR/$(dirname "$BACKUP_PATH")"
 cat > "$BACKUP_SCRIPT" <<SCRIPT
 #!/bin/bash
 cd '$REPO_DIR'
-git pull --rebase
+
+# Reset any leftover unstaged changes from a previous failed run
+git checkout -- .
+
+# Sync with remote before dumping
+git pull --rebase origin main
+
+# Dump the database
 mysqldump -u '$DB_USER' -p'$DB_PASSWORD' '$DB_NAME' > '$BACKUP_PATH'
+
+# Commit and push
 git add '$BACKUP_PATH'
 git commit -m "[auto-update] backup: db dump \$(date +%Y-%m-%d)" --allow-empty
+
+# Pull again in case something was pushed between dump and now, then push
+git pull --rebase origin main
 git push
 SCRIPT
 
